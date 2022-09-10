@@ -35,6 +35,9 @@ THE SOFTWARE.
 #include <arpa/inet.h>
 
 
+void process_message(uint32_t code, uint32_t type, uint32_t length, const char *payload);
+void write_details(const char* name, const char* value);
+
 // From Stack Overflow, with thanks:
 // http://stackoverflow.com/questions/342409/how-do-i-base64-encode-decode-in-c
 // minor mods to make independent of C99.
@@ -141,10 +144,15 @@ int main(void) {
 
   while (1) {
     char str[1025];
+
+    memset(str, 1, sizeof(str));
     if (fgets (str, 1024, stdin)) {
       uint32_t type,code,length;
       char tagend[1024];
-      int ret = sscanf(str,"<item><type>%8x</type><code>%8x</code><length>%u</length>",&type,&code,&length);
+      int ret;
+
+      printf("Read: %s\n", str);
+      ret = sscanf(str,"<item><type>%8x</type><code>%8x</code><length>%u</length>",&type,&code,&length);
       if (ret==3) {
         // now, think about processing the tag.
         // basically, we need to get hold of the base-64 data, if any
@@ -197,85 +205,11 @@ int main(void) {
         payload[outputlength]=0;
 
         // this has more information about tags, which might be relevant:
-        // https://code.google.com/p/ytrack/wiki/DMAP
-        switch (code) {
-          case 'mper':
-            {
+        // https://code.google.com/p/ytrack/wiki/DMAP 
 
-              // the following is just diagnostic
-              // {
-              // printf("'mper' payload is %d bytes long: ", length);
-              // char* p = payload;
-              // int c;
-              // for (c=0; c < length; c++) {
-              //   printf("%02x", *p);
-              //   p++;
-              // }
-              // printf("\n");
-              // }
+        process_message(code, type, length, payload);
 
-            // get the 64-bit number as a uint64_t by reading two uint32_t s and combining them
-            uint64_t vl = ntohl(*(uint32_t*)payload); // get the high order 32 bits
-            vl = vl << 32; // shift them into the correct location
-            uint64_t ul = ntohl(*(uint32_t*)(payload+sizeof(uint32_t))); // and the low order 32 bits
-            vl = vl + ul;
-            printf("Persistent ID: \"%" PRIx64 "\".\n",vl);
-
-            }
-            break;
-          case 'asul':
-            printf("URL: \"%s\".\n",payload);
-            break;
-          case 'asal':
-            printf("Album Name: \"%s\".\n",payload);
-            break;
-          case 'asar':
-            printf("Artist: \"%s\".\n",payload);
-            break;
-          case 'ascm':
-            printf("Comment: \"%s\".\n",payload);
-            break;
-          case 'asgn':
-            printf("Genre: \"%s\".\n",payload);
-            break;
-          case 'minm':
-            printf("Title: \"%s\".\n",payload);
-            break;
-          case 'ascp':
-            printf("Composer: \"%s\".\n",payload);
-            break;
-          case 'asdt':
-            printf("File kind: \"%s\".\n",payload);
-            break;
-          case 'assn':
-            printf("Sort as: \"%s\".\n",payload);
-            break;
-          case 'PICT':
-            printf("Picture received, length %u bytes.\n",length);
-            break;
-          case 'clip':
-            printf("The AirPlay 2 client at \"%s\" has started a play session.\n",payload);
-            break;
-          case 'svip':
-            printf("The address used by Shairport Sync for this play session is: \"%s\".\n",payload);
-            break;
-          case 'conn':
-            printf("The AirPlay 2 client at \"%s\" is about to select this player. (AirPlay 2 only.)\n",payload);
-            break;
-          case 'disc':
-            printf("The AirPlay 2 client at \"%s\" has released this player. (AirPlay 2 only.)\n",payload);
-            break;
-          default: if (type=='ssnc') {
-              char typestring[5];
-              *(uint32_t*)typestring = htonl(type);
-              typestring[4]=0;
-              char codestring[5];
-              *(uint32_t*)codestring = htonl(code);
-              codestring[4]=0;
-              printf("\"%s\" \"%s\": \"%s\".\n",typestring,codestring,payload);
-            }
-         }
-       } else {
+        } else {
           str[1024]='\0';
           printf("\nXXX Could not decipher: \"%s\".\n",str);
        }
@@ -284,4 +218,117 @@ int main(void) {
      }
    }
   return 0;
+}
+
+
+void process_message(uint32_t code, uint32_t type, uint32_t length, const char *payload){
+    switch (code)
+    {
+    case 'mper':
+    {
+
+      // the following is just diagnostic
+      // {
+      // printf("'mper' payload is %d bytes long: ", length);
+      // char* p = payload;
+      // int c;
+      // for (c=0; c < length; c++) {
+      //   printf("%02x", *p);
+      //   p++;
+      // }
+      // printf("\n");
+      // }
+
+      // get the 64-bit number as a uint64_t by reading two uint32_t s and combining them
+      uint64_t vl = ntohl(*(uint32_t *)payload);                      // get the high order 32 bits
+      vl = vl << 32;                                                  // shift them into the correct location
+      uint64_t ul = ntohl(*(uint32_t *)(payload + sizeof(uint32_t))); // and the low order 32 bits
+      vl = vl + ul;
+      printf("Persistent ID: \"%" PRIx64 "\".\n", vl);
+    }
+    break;
+    case 'asul':
+      printf("URL: \"%s\".\n", payload);
+      break;
+    case 'asal':
+      write_details("album", payload);
+      printf("Album Name: \"%s\".\n", payload);
+      break;
+    case 'asar':
+      printf("Artist: \"%s\".\n", payload);
+      write_details("artist", payload);
+      break;
+    case 'ascm':
+      write_details("comment", payload);
+      printf("Comment: \"%s\".\n", payload);
+      break;
+    case 'asgn':
+      write_details("genre", payload);
+      printf("Genre: \"%s\".\n", payload);
+      break;
+    case 'minm':
+      write_details("title", payload);
+      printf("Title: \"%s\".\n", payload);
+      break;
+    case 'ascp':
+      write_details("composer", payload);
+      printf("Composer: \"%s\".\n", payload);
+      break;
+    case 'asdt':
+      printf("File kind: \"%s\".\n", payload);
+      break;
+    case 'assn':
+      printf("Sort as: \"%s\".\n", payload);
+      break;
+    case 'PICT':
+      printf("Picture received, length %u bytes.\n", length);
+      break;
+    case 'clip':
+      write_details("session", "started");
+      printf("The AirPlay 2 client at \"%s\" has started a play session.\n", payload);
+      break;
+    case 'svip':
+      printf("The address used by Shairport Sync for this play session is: \"%s\".\n", payload);
+      break;
+    case 'conn':
+      printf("The AirPlay 2 client at \"%s\" is about to select this player. (AirPlay 2 only.)\n", payload);
+      break;
+    case 'disc':
+      printf("The AirPlay 2 client at \"%s\" has released this player. (AirPlay 2 only.)\n", payload);
+      break;
+    case 'pend':
+      write_details("session", "ending");
+      printf("Session ending\n");
+      break;
+    case 'aend':
+      write_details("session", "ended");
+      printf("Session ended\n");
+      break;
+    default:
+      if (type == 'ssnc')
+      {
+        char typestring[5];
+        *(uint32_t *)typestring = htonl(type);
+        typestring[4] = 0;
+        char codestring[5];
+        *(uint32_t *)codestring = htonl(code);
+        codestring[4] = 0;
+        printf("\"%s\" \"%s\": \"%s\".\n", typestring, codestring, payload);
+      }
+    }
+
+}
+
+const char* path = "/tmp/shairport-sync/.cache/";
+
+void write_details(const char* name, const char* value){
+  char filename[300];
+  FILE* fp;
+
+  sprintf(filename, "%s%s", path, name);
+  fp = fopen(filename, "w");
+  if (fp) {
+    fwrite(value, strlen(value), 1, fp);
+    fclose(fp);
+  }
 }
